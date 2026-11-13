@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Соедини точки</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg:#0e1621; --card:#17212b; --card2:#1d2b3a; --line:#2b3a4a;
+    --accent:#3df0a0; --accent-dim:#1f4a42; --blue:#2ea6ff; --text:#e8f0f8; --muted:#7f93a8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; }
+  body {
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,'Segoe UI',Roboto,system-ui,sans-serif;
+    display:flex; justify-content:center; padding:10px; overflow-x:hidden;
+  }
+  .card {
+    width:min(100%,460px); background:var(--card); border-radius:18px; padding:14px;
+    display:flex; flex-direction:column; gap:10px; align-self:flex-start;
+  }
+  .top { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:.9rem; }
+  .top b { color:var(--accent); font-size:1.15rem; }
+  .top .best b { color:var(--text); font-size:1rem; }
+  .board { position:relative; }
+  canvas {
+    display:block; width:100%; aspect-ratio:1/1; border-radius:14px; touch-action:none; cursor:crosshair;
+    background:radial-gradient(circle at 30% 25%,#1b2b3d,#0f1823);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .toast {
+    position:absolute; left:50%; top:10px; transform:translate(-50%,-8px);
+    background:rgba(14,22,33,.92); border:1px solid var(--line); border-radius:100px;
+    padding:7px 16px; font-size:.85rem; white-space:nowrap; opacity:0; pointer-events:none;
+    transition:opacity .25s, transform .25s;
+  }
+  .toast.on { opacity:1; transform:translate(-50%,0); }
+  .toast.err { color:#ff9c9c; border-color:rgba(255,120,120,.4); }
+  .toast.ok { color:var(--accent); border-color:rgba(61,240,160,.4); }
+  .row { display:grid; gap:8px; }
+  .row.two { grid-template-columns:1fr 1fr; }
+  .chip {
+    background:var(--card); border:1.5px solid var(--line); color:var(--text);
+    border-radius:12px; padding:11px 6px; font-size:.95rem; font-weight:600; cursor:pointer;
+    transition:transform .1s, background .2s;
+  }
+  .chip:active { transform:scale(.97); }
+  .chip.green { background:var(--accent); color:#06231a; border-color:var(--accent); font-size:1rem; letter-spacing:.3px; }
+  .chip.blue { border-color:var(--blue); color:var(--blue); background:transparent; }
+  .chip.on { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); }
+  .lvl { text-align:center; color:var(--muted); font-size:.8rem; }
+  .lvl b { color:var(--text); }
+
+  /* рейтинг */
+  .backdrop {
+    position:fixed; inset:0; background:rgba(5,9,15,.7); display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .25s; z-index:50; padding:14px;
+  }
+  .backdrop.on { opacity:1; pointer-events:auto; }
+  .modal {
+    background:var(--card); border:1px solid var(--line); border-radius:20px; padding:18px;
+    width:min(100%,420px); max-height:88vh; display:flex; flex-direction:column; gap:12px;
+  }
+  .modal h2 { text-align:center; font-size:1.2rem; }
+  .list { list-style:none; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
+  .list li {
+    display:flex; align-items:center; gap:12px; background:var(--card2);
+    border:1px solid transparent; border-radius:12px; padding:10px 12px; font-size:.95rem;
+  }
+  .list li.me { border-color:var(--accent); background:var(--accent-dim); }
+  .list .rk { width:30px; text-align:center; font-weight:700; color:var(--muted); }
+  .list .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .list .sc { color:var(--accent); font-weight:700; }
+  .mine { text-align:center; color:var(--muted); font-size:.85rem; }
+  .mine b { color:var(--accent); }
+  .note { text-align:center; color:var(--muted); font-size:.75rem; }
+
+  /* донаты */
+  .chip.donate { border-color:#b07cff; color:#d6bbff; background:transparent; }
+  .modal.dn { text-align:center; overflow-y:auto; }
+  .dn-ava { font-size:44px; }
+  .dn p { color:var(--muted); font-size:.88rem; line-height:1.5; }
+  .dbtn { display:block; text-decoration:none; text-align:center; padding:13px; border-radius:12px;
+          font-weight:700; font-size:1rem; border:none; width:100%; cursor:pointer; color:#fff; }
+  .dbtn:active { transform:scale(.98); }
+  .dbtn.da { background:linear-gradient(90deg,#fb8c2b,#ff6b00); }
+  .dbtn.ya { background:linear-gradient(90deg,#ffcc00,#ff9900); color:#1e1e2f; }
+  .dbtn.ton { background:linear-gradient(90deg,#0098ea,#0077b6); }
+  .wallet { background:var(--card2); border:1px dashed var(--line); border-radius:12px; padding:10px; font-size:.78rem; color:var(--muted); }
+  .wallet code { display:block; color:var(--text); word-break:break-all; margin:6px 0; font-size:.82rem; user-select:text; -webkit-user-select:text; }
+  .copy { background:#0098ea; color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:.8rem; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div>Счёт: <b id="score">0</b></div>
+    <div class="best">Рекорд: <b id="best">0</b></div>
+  </div>
+  <div class="lvl">Уровень <b id="level">1</b> · точек <b id="count">4</b></div>
+  <div class="board">
+    <canvas id="cv"></canvas>
+    <div class="toast" id="toast"></div>
+  </div>
+  <div class="row two">
+    <button class="chip" id="hintBtn">💡 Подсказка</button>
+    <button class="chip" id="resetBtn">↻ Заново</button>
+  </div>
+  <button class="chip green" id="ratingBtn">🏆 РЕЙТИНГ</button>
+  <button class="chip blue" id="channelBtn">📢 Наш канал</button>
+  <button class="chip donate" id="donateBtn">💜 Поддержать разработчика</button>
+</div>
+
+<div class="backdrop" id="donateModal">
+  <div class="modal dn">
+    <div class="dn-ava">🎮</div>
+    <h2>Поддержать разработчика</h2>
+    <p>Привет! Я — инди-разработчик. Делаю HTML-игры, собираю APK для Android и пишу Telegram-ботов.
+       Ваша поддержка помогает оплачивать сервера и покупать новые ассеты. Спасибо, что играете!</p>
+    <button class="dbtn da" data-url="https://www.donationalerts.com/r/tipokeee">💜 DonationAlerts</button>
+    <button class="dbtn ya" data-url="https://tips.yandex.ru/guest/payment/3668371">💛 Yandex Tips</button>
+    <button class="dbtn ton" id="tonBtn">💎 Донат в TON</button>
+    <div class="wallet">
+      TON-кошелёк:
+      <code id="tonAddress">UQCc9T6h4ot89XQnfkT-a1F0bhZgIBLVGSdlZf3_uNcnXJ_N</code>
+      <button class="copy" id="copyBtn">📋 Скопировать адрес</button>
+    </div>
+    <button class="chip blue" id="devTgBtn" style="display:none">✉️ Связаться со мной</button>
+    <button class="chip green" id="donateClose">Закрыть</button>
+  </div>
+</div>
+
+<div class="backdrop" id="modal">
+  <div class="modal">
+    <h2>🏆 Рейтинг игроков</h2>
+    <div class="mine" id="mine"></div>
+    <ul class="list" id="list"></ul>
+    <div class="note" id="note"></div>
+    <button class="chip green" id="closeBtn">Закрыть</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ================= НАСТРОЙКИ =================
+  const CHANNEL_URL = 'https://t.me/vibexxxapk';   // ← ваш канал
+  const API = '';                                   // тот же домен, что и у бота
+  const DEV_TG = '';                                // ← ваш ник для связи, напр. 'https://t.me/username' (пусто = кнопка скрыта)
+  const TON_ADDRESS = 'UQCc9T6h4ot89XQnfkT-a1F0bhZgIBLVGSdlZf3_uNcnXJ_N';
+
+  // ================= TELEGRAM =================
+  const tg = window.Telegram && Telegram.WebApp;
+  const initData = tg ? tg.initData : '';
+  const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+  if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#0e1621'); tg.setBackgroundColor('#0e1621'); } catch(e){} }
+  const haptic = (t) => { try { tg && tg.HapticFeedback.notificationOccurred(t); } catch(e){} };
+  const tick = () => { try { tg && tg.HapticFeedback.impactOccurred('light'); } catch(e){} };
+
+  // ================= DOM =================
+  const $ = (id) => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  const W = 640, H = 640;
+  let dpr = 1;
+  function fit(){
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const size = cv.getBoundingClientRect().width || 400;
+    cv.width = Math.round(size * dpr); cv.height = Math.round(size * dpr);
+    ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0);
+    draw();
+  }
+
+  // ================= КОНФИГ ИГРЫ =================
+  const MARGIN = 60, DOT_R = 18, HIT_R = 48, DRAG_T = 12, MIN_DIST = 105, MAX_POINTS = 18, BASE = 4;
+
+  // ================= СОСТОЯНИЕ =================
+  let nodes = [], links = [];
+  let selected = null, drag = null, hovered = null, pointer = { x: W/2, y: H/2 };
+  let level = 1, score = 0, nextId = 0, locked = false;
+  let levelStart = Date.now(), mistakes = 0, hintId = null, hintTimer = null;
+  let best = 0;
+  try { best = +localStorage.getItem('dots_best') || 0; } catch(e){}
+
+  const dist = (a,b,c,d) => Math.hypot(c-a, d-b);
+  const byId = (id) => nodes.find(n => n.id === id) || null;
+  const linked = (a,b) => links.some(([x,y]) => (x===a&&y===b)||(x===b&&y===a));
+  const degree = (id) => links.filter(([x,y]) => x===id||y===id).length;
+
+  // ================= ГЕНЕРАЦИЯ =================
+  function randPos(){
+    for (let i=0;i<300;i++){
+      const x = MARGIN + Math.random()*(W-2*MARGIN), y = MARGIN + Math.random()*(H-2*MARGIN);
+      if (nodes.every(n => dist(x,y,n.x,n.y) >= MIN_DIST)) return {x,y};
+    }
+    return null;
+  }
+  function addPoint(){
+    if (nodes.length >= MAX_POINTS) return;
+    const p = randPos(); if (!p) return;
+    nodes.push({ x:p.x, y:p.y, id:nextId++, num:nodes.length+1 });
+  }
+  function newRound(){
+    links = []; selected = null; drag = null; hintId = null; mistakes = 0; levelStart = Date.now(); locked = false;
+    syncUI(); draw();
+  }
+  function resetGame(){
+    nodes = []; nextId = 0; level = 1; score = 0;
+    for (let i=0;i<BASE;i++) addPoint();
+    newRound();
+  }
+
+  // ================= UI =================
+  function syncUI(){
+    $('score').textContent = score; $('best').textContent = best;
+    $('level').textContent = level; $('count').textContent = nodes.length;
+  }
+  let tT = null;
+  function toast(text, kind){
+    const t = $('toast'); t.textContent = text; t.className = 'toast on ' + (kind || '');
+    clearTimeout(tT); tT = setTimeout(() => t.className = 'toast', 1300);
+  }
+
+  // ================= ЛОГИКА =================
+  function tryConnect(aId, bId){
+    if (locked || aId === bId) return;
+    const a = byId(aId), b = byId(bId); if (!a || !b) return;
+    if (linked(aId, bId)) { toast('Уже соединено', 'err'); return; }
+    const lo = Math.min(a.num, b.num);
+    if (Math.abs(a.num - b.num) !== 1) { mistakes++; haptic('error'); toast(`Нужно ${lo} → ${lo+1}`, 'err'); return; }
+    links.push(a.num < b.num ? [aId,bId] : [bId,aId]);
+    hintId = null; tick();
+    checkDone();
+  }
+
+  function checkDone(){
+    const s = [...nodes].sort((x,y) => x.num - y.num);
+    for (let i=0;i<s.length-1;i++) if (!linked(s[i].id, s[i+1].id)) return;
+
+    const secs = Math.round((Date.now() - levelStart) / 1000);
+    const pts = Math.max(50, 100 + nodes.length*20 + Math.max(0, 40 - secs)*5 - mistakes*15);
+    score += pts; locked = true;
+    if (score > best) { best = score; try { localStorage.setItem('dots_best', best); } catch(e){} }
+    haptic('success'); toast(`🎉 +${pts} очков`, 'ok');
+    submitScore();
+    level++;
+    syncUI(); draw();
+
+    setTimeout(() => {
+      const add = Math.random() < 0.6 ? 1 : 2;
+      for (let i=0;i<add;i++) addPoint();
+      newRound();
+    }, 900);
+  }
+
+  function showHint(){
+    if (locked) return;
+    const s = [...nodes].sort((x,y) => x.num - y.num);
+    for (let i=0;i<s.length-1;i++) if (!linked(s[i].id, s[i+1].id)) {
+      hintId = [s[i].id, s[i+1].id]; break;
+    }
+    score = Math.max(0, score - 10); syncUI();
+    clearTimeout(hintTimer); hintTimer = setTimeout(() => { hintId = null; draw(); }, 1800);
+    toast('Подсказка: −10 очков'); draw();
+  }
+
+  // ================= РЕЙТИНГ / СЕРВЕР =================
+  function submitScore(){
+    if (!initData) return;
+    fetch(API + '/api/score', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ initData, score, level })
+    }).catch(() => {});
+  }
+
+  function renderList(rows, meRank, meScore, note){
+    const ul = $('list'); ul.innerHTML = '';
+    const medal = ['🥇','🥈','🥉'];
+    rows.forEach((r, i) => {
+      const li = document.createElement('li');
+      if (r.me) li.className = 'me';
+      const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = medal[i] || (i+1);
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = r.name;
+      const sc = document.createElement('span'); sc.className = 'sc'; sc.textContent = r.score;
+      li.append(rk, nm, sc); ul.appendChild(li);
+    });
+    $('mine').innerHTML = meRank ? `Ваше место: <b>#${meRank}</b> · рекорд <b>${meScore}</b>` : 'Сыграйте уровень, чтобы попасть в рейтинг';
+    $('note').textContent = note || '';
+  }
+
+  async function openRating(){
+    $('modal').classList.add('on');
+    $('list').innerHTML = '<li><span class="nm">Загрузка…</span></li>';
+    $('mine').textContent = ''; $('note').textContent = '';
+    if (initData) {
+      try {
+        const r = await fetch(API + '/api/leaderboard', {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ initData })
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error('bad');
+        renderList(d.top, d.my_rank, d.my_score, '');
+        return;
+      } catch(e) { /* падаем на демо ниже */ }
+    }
+    // Демо-режим вне Telegram
+    const demo = [
+      {name:'Игрок_777', score:2450}, {name:'NeonLine', score:1980},
+      {name:'Точка_Нет', score:1460}, {name:'GlassMaster', score:940}
+    ];
+    const me = { name: (tgUser && (tgUser.username || tgUser.first_name)) || 'Вы', score: best, me: true };
+    const rows = best > 0 ? [...demo, me] : demo;
+    rows.sort((a,b) => b.score - a.score);
+    const rank = best > 0 ? rows.indexOf(me) + 1 : 0;
+    renderList(rows, rank, best, 'Демо-режим: откройте игру через бота, чтобы видеть реальный рейтинг');
+  }
+
+  // ================= ОТРИСОВКА =================
+  function draw(){
+    ctx.clearRect(0, 0, W, H);
+
+    for (const [a,b] of links) {
+      const A = byId(a), B = byId(b); if (!A || !B) continue;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = 'rgba(61,240,160,.6)'; ctx.shadowBlur = 14;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(61,240,160,.85)';
+      ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
+    }
+
+    let from = null, px = 0, py = 0;
+    if (drag && drag.moved) { from = byId(drag.from); px = drag.x; py = drag.y; }
+    else if (selected !== null) { from = byId(selected); px = pointer.x; py = pointer.y; }
+    if (from) {
+      ctx.setLineDash([7,7]); ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(200,230,255,.8)';
+      ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(px, py); ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    const done = new Set(); links.forEach(([a,b]) => { done.add(a); done.add(b); });
+    for (const n of nodes) {
+      const isH = n.id === hovered, isS = n.id === selected || (drag && drag.moved && drag.from === n.id);
+      const isHint = hintId && hintId.includes(n.id), isDone = done.has(n.id);
+      const r = DOT_R * (isH || isS ? 1.2 : 1) * (isHint ? 1.15 : 1);
+
+      if (isDone || isH || isS || isHint) {
+        const g = ctx.createRadialGradient(n.x,n.y,r*.5,n.x,n.y,r*3.4);
+        g.addColorStop(0, isHint ? 'rgba(255,215,90,.45)' : isDone ? 'rgba(61,240,160,.32)' : 'rgba(46,166,255,.32)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.x,n.y,r*3.4,0,Math.PI*2); ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI*2);
+      ctx.fillStyle = isHint ? '#d9a62b' : isDone ? '#1fae78' : '#23517f'; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = isHint ? '#ffe28a' : isDone ? '#9bf7cf' : '#8cc4ff'; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${Math.round(r*1.05)}px -apple-system,'Segoe UI',sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(n.num, n.x, n.y + 1);
+    }
+  }
+
+  // ================= ВВОД (pointer events: мышь + тач) =================
+  function coords(e){
+    const r = cv.getBoundingClientRect();
+    return { x:(e.clientX - r.left) * W / r.width, y:(e.clientY - r.top) * H / r.height };
+  }
+  function find(x, y, rad = HIT_R){
+    let best = null, bd = rad;
+    for (const n of nodes) { const d = dist(x,y,n.x,n.y); if (d < bd) { bd = d; best = n; } }
+    return best;
+  }
+
+  cv.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); if (locked) return;
+    try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    const p = coords(e); pointer = p;
+    const n = find(p.x, p.y);
+    if (n) { drag = { from:n.id, sx:p.x, sy:p.y, x:p.x, y:p.y, moved:false }; hovered = n.id; }
+    else selected = null;
+    draw();
+  });
+
+  cv.addEventListener('pointermove', (e) => {
+    const p = coords(e); pointer = p;
+    if (drag) {
+      drag.x = p.x; drag.y = p.y;
+      if (!drag.moved && dist(p.x,p.y,drag.sx,drag.sy) > DRAG_T) drag.moved = true;
+      const t = find(p.x, p.y); hovered = (drag.moved && t && t.id !== drag.from) ? t.id : drag.from;
+    } else {
+      const t = find(p.x, p.y); hovered = t ? t.id : null;
+      if (selected !== null && t && t.id === selected) hovered = null;
+    }
+    draw();
+  });
+
+  cv.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    const p = coords(e);
+    if (drag) {
+      const t = find(p.x, p.y);
+      if (drag.moved) { if (t && t.id !== drag.from) tryConnect(drag.from, t.id); selected = null; }
+      else clickNode(drag.from);
+      drag = null;
+    }
+    hovered = null; draw();
+  });
+  cv.addEventListener('pointercancel', () => { drag = null; hovered = null; draw(); });
+
+  function clickNode(id){
+    if (selected === null) { selected = id; const n = byId(id); toast(`Выберите ${n.num+1} или ${n.num-1}`); }
+    else if (selected === id) selected = null;
+    else { tryConnect(selected, id); selected = null; }
+  }
+
+  // ================= КНОПКИ =================
+  $('resetBtn').onclick = resetGame;
+  $('hintBtn').onclick = showHint;
+  $('ratingBtn').onclick = openRating;
+  $('closeBtn').onclick = () => $('modal').classList.remove('on');
+  $('modal').onclick = (e) => { if (e.target === $('modal')) $('modal').classList.remove('on'); };
+  $('channelBtn').onclick = () => { tg ? tg.openTelegramLink(CHANNEL_URL) : window.open(CHANNEL_URL, '_blank'); };
+
+  // ================= ДОНАТЫ =================
+  function openExternal(url){
+    if (tg && /^https:\/\/t\.me\//.test(url)) tg.openTelegramLink(url);
+    else if (tg) tg.openLink(url);
+    else window.open(url, '_blank');
+  }
+  function copyText(text){
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise((res, rej) => {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;user-select:text;-webkit-user-select:text';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy') ? res() : rej(); } catch(e) { rej(e); }
+      ta.remove();
+    });
+  }
+  function copyTon(){
+    copyText(TON_ADDRESS).then(() => {
+      const b = $('copyBtn'); b.textContent = '✅ Скопировано!';
+      setTimeout(() => b.textContent = '📋 Скопировать адрес', 2000);
+      haptic('success');
+    }).catch(() => alert('Не удалось скопировать. Адрес: ' + TON_ADDRESS));
+  }
+  $('donateBtn').onclick = () => $('donateModal').classList.add('on');
+  $('donateClose').onclick = () => $('donateModal').classList.remove('on');
+  $('donateModal').onclick = (e) => { if (e.target === $('donateModal')) $('donateModal').classList.remove('on'); };
+  document.querySelectorAll('.dbtn[data-url]').forEach(b => b.onclick = () => openExternal(b.dataset.url));
+  $('tonBtn').onclick = copyTon;
+  $('copyBtn').onclick = copyTon;
+  if (DEV_TG) { const d = $('devTgBtn'); d.style.display = ''; d.onclick = () => openExternal(DEV_TG); }
+
+  window.addEventListener('resize', fit);
+  resetGame(); fit();
+})();
+</script>
+</body>
+</html>
